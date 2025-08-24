@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Face Expression Detection with Webcam & Image Upload</title>
+  <style>
+    body {
+      margin: 0;
+      background: #222;
+      color: white;
+      text-align: center;
+      font-family: Arial, sans-serif;
+    }
+    #container {
+      position: relative;
+      display: inline-block;
+      margin-top: 20px;
+    }
+    video, canvas, img {
+      border-radius: 10px;
+      max-width: 720px;
+      max-height: 560px;
+      display: block;
+      margin: 0 auto;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #controls {
+      margin-top: 10px;
+    }
+    button, input[type=file] {
+      font-size: 16px;
+      padding: 8px 12px;
+      margin: 5px;
+      cursor: pointer;
+      border-radius: 5px;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <h2>Face Expression Detection</h2>
+
+  <div id="controls">
+    <button id="useWebcam">Use Webcam</button>
+    <input type="file" id="uploadImage" accept="image/*" />
+  </div>
+
+  <div id="container">
+    <video id="video" width="720" height="560" autoplay muted></video>
+    <img id="uploadedImg" style="display:none;" />
+    <canvas id="overlay" width="720" height="560"></canvas>
+  </div>
+
+  <!-- face-api.js -->
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const uploadedImg = document.getElementById('uploadedImg');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const useWebcamBtn = document.getElementById('useWebcam');
+    const uploadInput = document.getElementById('uploadImage');
+
+    let detectionInterval;
+    let stream;
+
+    async function loadModels() {
+      const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights/';
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+      ]);
+      console.log('Models loaded');
+    }
+
+    async function startWebcam() {
+      clearInterval(detectionInterval);
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      uploadedImg.style.display = 'none';
+      video.style.display = 'block';
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+        video.srcObject = stream;
+      } catch (err) {
+        console.error('Error accessing webcam:', err);
+        alert('Cannot access webcam.');
+        return;
+      }
+
+      video.addEventListener('play', () => {
+        clearInterval(detectionInterval);
+        detectionInterval = setInterval(async () => {
+          const detections = await faceapi
+            .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceExpressions();
+
+          drawDetections(detections, video);
+        }, 200);
+      }, { once: true });
+    }
+
+    async function detectImage(img) {
+      clearInterval(detectionInterval);
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+      video.style.display = 'none';
+      uploadedImg.style.display = 'block';
+      uploadedImg.src = img.src;
+
+      // Wait image to load for face-api detection
+      uploadedImg.onload = async () => {
+        const detections = await faceapi
+          .detectAllFaces(uploadedImg, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+          .withFaceExpressions();
+
+        drawDetections(detections, uploadedImg);
+      };
+    }
+
+    function drawDetections(detections, source) {
+      const displaySize = { width: source.width, height: source.height };
+      faceapi.matchDimensions(canvas, displaySize);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+      resizedDetections.forEach(detection => {
+        const box = detection.detection.box;
+        ctx.strokeStyle = 'lime';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+        // Draw landmarks
+        const landmarks = detection.landmarks.positions;
+        ctx.fillStyle = 'red';
+        landmarks.forEach(pt => {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 3, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+
+        // Find dominant expression
+        const expressions = detection.expressions;
+        let dominant = '';
+        let maxProb = 0;
+        for (const [exp, prob] of Object.entries(expressions)) {
+          if (prob > maxProb) {
+            dominant = exp;
+            maxProb = prob;
+          }
+        }
+        ctx.fillStyle = 'lime';
+        ctx.font = '24px Arial';
+        ctx.fillText(`${dominant} (${(maxProb * 100).toFixed(1)}%)`, box.x, box.y - 10);
+      });
+    }
+
+    useWebcamBtn.addEventListener('click', () => {
+      startWebcam();
+    });
+
+    uploadInput.addEventListener('change', () => {
+      if (uploadInput.files.length > 0) {
+        const file = uploadInput.files[0];
+        const imgURL = URL.createObjectURL(file);
+        uploadedImg.src = imgURL;
+        detectImage(uploadedImg);
+      }
+    });
+
+    // Load models and start webcam by default
+    loadModels().then(startWebcam);
+  </script>
+</body>
+</html>
