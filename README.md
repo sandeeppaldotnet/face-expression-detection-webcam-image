@@ -2,7 +2,7 @@
 
 A web-based application that detects facial expressions in real-time using your webcam or from any uploaded image. Powered by [face-api.js](https://github.com/justadudewhohacks/face-api.js), the app runs entirely in the browser and identifies emotions like happy, sad, surprised, angry, and more using face detection, landmark tracking, and expression classification.
 
-![Screenshot](screenshot-face-expression.png)
+![Screenshot](face-expression-detection.gif)
 
 ## ✨ Features
 
